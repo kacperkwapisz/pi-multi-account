@@ -1,0 +1,51 @@
+{
+  "name": "pi-multi-account",
+  "version": "0.1.0",
+  "description": "Multiple Claude & ChatGPT accounts per provider for Pi, with automatic switching when one hits its limit.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Kacper Kwapisz",
+  "homepage": "https://github.com/kacperkwapisz/pi-multi-account#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kacperkwapisz/pi-multi-account.git"
+  },
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "multi-account",
+    "anthropic",
+    "claude",
+    "openai-codex",
+    "chatgpt"
+  ],
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --test test/*.test.ts"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/pi-coding-agent": "1.1.0",
+    "@earendil-works/pi-tui": "1.1.0",
+    "@types/node": "^22.19.0",
+    "typescript": "^5.9.0"
+  }
+}
