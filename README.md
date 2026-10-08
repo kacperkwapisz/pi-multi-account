@@ -53,7 +53,23 @@ Anthropic account 1 hit its usage limit (resets in 2h 14m). Continuing on accoun
 
 See every account's usage with
 [pi-subscription-usage](https://github.com/kacperkwapisz/pi-subscription-usage); it picks up
-these accounts automatically.
+these accounts automatically, and with both installed you can switch accounts straight from
+its `/subscriptions` view.
+
+## For other extensions
+
+pi-multi-account answers on Pi's `pi.events` bus, so other extensions can switch accounts
+without depending on this package:
+
+```ts
+let accounts: { version: 1; useAccount(providerId: string, ctx: ExtensionContext): Promise<boolean> } | undefined;
+pi.events.emit("pi-multi-account:connect", { reply: (api) => (accounts = api) });
+// Set immediately when pi-multi-account is loaded, otherwise undefined.
+await accounts?.useAccount("anthropic-account-2", ctx);
+```
+
+`useAccount` keeps the current model when the account offers it, asks otherwise, and
+overrides a recorded usage limit (it is the user's choice).
 
 ## Development
 

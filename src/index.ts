@@ -1,11 +1,12 @@
 import { type FSWatcher, watch } from "node:fs";
 import { basename, dirname } from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type FamilyAccounts, listAccounts, providersToRegister } from "./accounts.ts";
 import { authFilePath, readCredentials } from "./auth-file.ts";
 import { createAccountProvider } from "./clone.ts";
 import { Cooldowns } from "./failover.ts";
-import type { Slot } from "./families.ts";
+import { parseSlot, type Slot } from "./families.ts";
+import { CONNECT_CHANNEL, type ConnectRequest, type MultiAccountApi } from "./connect.ts";
 import { registerAutomaticSwitching } from "./switching.ts";
 import { AccountsView, type AccountStatus, type ViewAction, type ViewTab } from "./view.ts";
 
@@ -58,7 +59,7 @@ export default function multiAccount(pi: ExtensionAPI) {
 	});
 
 	/** Switches to an account, keeping the current model when that account offers it. */
-	const useAccount = async (ctx: ExtensionCommandContext, slot: Slot) => {
+	const useAccount = async (ctx: ExtensionContext, slot: Slot): Promise<boolean> => {
 		const providerName = ctx.modelRegistry.getProviderDisplayName(slot.providerId);
 		const current = ctx.model;
 		let model = current ? ctx.modelRegistry.find(slot.providerId, current.id) : undefined;
@@ -69,12 +70,26 @@ export default function multiAccount(pi: ExtensionAPI) {
 				models.map((m) => m.id),
 			);
 			model = models.find((m) => m.id === picked);
-			if (!model) return;
+			if (!model) return false;
 		}
 		cooldowns.clear(slot.providerId); // a manual choice overrides a recorded limit
-		if (await pi.setModel(model)) ctx.ui.notify(`Using ${providerName} · ${model.name}`, "info");
+		const switched = await pi.setModel(model).catch(() => false);
+		if (switched) ctx.ui.notify(`Using ${providerName} · ${model.name}`, "info");
 		else ctx.ui.notify(`${providerName} is not logged in.`, "warning");
+		return switched;
 	};
+
+	// Other extensions (such as pi-subscription-usage) can switch accounts through this.
+	const api: MultiAccountApi = {
+		version: 1,
+		useAccount: async (providerId, ctx) => {
+			const slot = parseSlot(providerId);
+			return slot ? useAccount(ctx, slot) : false;
+		},
+	};
+	pi.events.on(CONNECT_CHANNEL, (request) => {
+		(request as Partial<ConnectRequest> | undefined)?.reply?.(api);
+	});
 
 	pi.registerCommand("accounts", {
 		description: "See, switch and add your Claude and ChatGPT accounts",
