@@ -54,7 +54,7 @@ Anthropic account 1 hit its usage limit (resets in 2h 14m). Continuing on accoun
 See every account's usage with
 [pi-subscription-usage](https://github.com/kacperkwapisz/pi-subscription-usage); it picks up
 these accounts automatically, and with both installed you can switch accounts straight from
-its `/subscriptions` view.
+its `/usage` view.
 
 ## For other extensions
 
