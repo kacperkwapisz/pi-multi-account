@@ -1,22 +1,29 @@
 import type { Provider } from "@earendil-works/pi-ai";
-import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
-import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
+// Pi provides this module to extensions; individual provider modules are not.
+import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 
-/**
- * A subscription family: one of Pi's built-in providers whose OAuth login can be
- * repeated for extra accounts. Account 1 is the built-in provider itself; account N
- * is a clone registered as `<id>-account-N`.
- */
+let builtins: Map<string, Provider> | undefined;
+
+/** Pi's built-in provider with this id. */
+function builtin(id: string): () => Provider {
+	return () => {
+		builtins ??= new Map(builtinProviders().map((provider) => [provider.id, provider]));
+		const provider = builtins.get(id);
+		if (!provider) throw new Error(`Pi has no built-in ${id} provider`);
+		return provider;
+	};
+}
+
 export interface Family {
 	/** Pi's built-in provider id, e.g. `anthropic`. */
 	readonly id: string;
-	/** Creates a fresh instance of Pi's built-in provider. */
+	/** Pi's built-in provider for this family. */
 	readonly createBase: () => Provider;
 }
 
 export const FAMILIES: readonly Family[] = [
-	{ id: "anthropic", createBase: anthropicProvider },
-	{ id: "openai", createBase: openaiProvider },
+	{ id: "anthropic", createBase: builtin("anthropic") },
+	{ id: "openai", createBase: builtin("openai") },
 ];
 
 export interface Slot {
