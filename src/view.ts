@@ -1,6 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Key, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { Family, Slot } from "./families.ts";
+import { formatDuration } from "./format.ts";
 
 export interface ViewTab {
 	readonly family: Family;
@@ -12,13 +13,19 @@ export interface ViewTab {
 
 export type ViewAction = { readonly type: "use"; readonly slot: Slot } | { readonly type: "login"; readonly providerId: string };
 
-/** Whether Pi can authenticate an account right now. */
-export type LoginCheck = (slot: Slot) => boolean;
+export interface AccountStatus {
+	/** Whether Pi can authenticate the account. */
+	readonly loggedIn: boolean;
+	/** When an account that hit its usage limit becomes usable again (epoch ms). */
+	readonly limitedUntil?: number;
+}
+
+export type StatusCheck = (slot: Slot) => AccountStatus;
 
 /** The `/accounts` view: one tab per provider, every account, which one is in use. */
 export class AccountsView implements Component {
 	private readonly tabs: readonly ViewTab[];
-	private readonly isLoggedIn: LoginCheck;
+	private readonly status: StatusCheck;
 	private readonly theme: Theme;
 	private readonly currentProvider: string | undefined;
 	private readonly done: (action?: ViewAction) => void;
@@ -28,13 +35,13 @@ export class AccountsView implements Component {
 
 	constructor(
 		tabs: readonly ViewTab[],
-		isLoggedIn: LoginCheck,
+		status: StatusCheck,
 		theme: Theme,
 		currentProvider: string | undefined,
 		done: (action?: ViewAction) => void,
 	) {
 		this.tabs = tabs;
-		this.isLoggedIn = isLoggedIn;
+		this.status = status;
 		this.theme = theme;
 		this.currentProvider = currentProvider;
 		this.done = done;
@@ -65,7 +72,7 @@ export class AccountsView implements Component {
 		} else if (matchesKey(data, Key.enter)) {
 			const slot = tab.accounts[index];
 			if (!slot) return this.done({ type: "login", providerId: tab.next.providerId });
-			if (!this.isLoggedIn(slot)) return this.done({ type: "login", providerId: slot.providerId });
+			if (!this.status(slot).loggedIn) return this.done({ type: "login", providerId: slot.providerId });
 			return this.done({ type: "use", slot });
 		} else {
 			return;
@@ -110,7 +117,11 @@ export class AccountsView implements Component {
 	private renderAccount(slot: Slot, selected: boolean, width: number): string {
 		const t = this.theme;
 		const inUse = slot.providerId === this.currentProvider;
-		const status = !this.isLoggedIn(slot) ? t.fg("error", "needs login") : inUse ? t.fg("accent", "in use") : "";
+		const { loggedIn, limitedUntil } = this.status(slot);
+		const limited = limitedUntil ? `limit reached · resets in ${formatDuration(limitedUntil - Date.now())}` : undefined;
+		const status = !loggedIn
+			? t.fg("error", "needs login")
+			: [limited && t.fg("warning", limited), inUse && t.fg("accent", "in use")].filter(Boolean).join(t.fg("dim", " · "));
 		const prefix = `${selected ? t.fg("accent", " > ") : "   "}${inUse ? t.fg("accent", "● ") : "  "}`;
 		const left = `${prefix}${t.fg(selected ? "accent" : "text", `Account ${slot.number}`)} ${t.fg("dim", slot.providerId)}`;
 		if (!status) return left;

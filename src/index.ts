@@ -4,8 +4,13 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import { type FamilyAccounts, listAccounts, providersToRegister } from "./accounts.ts";
 import { authFilePath, readCredentials } from "./auth-file.ts";
 import { createAccountProvider } from "./clone.ts";
+import { Cooldowns } from "./failover.ts";
 import type { Slot } from "./families.ts";
-import { AccountsView, type ViewAction, type ViewTab } from "./view.ts";
+import { registerAutomaticSwitching } from "./switching.ts";
+import { AccountsView, type AccountStatus, type ViewAction, type ViewTab } from "./view.ts";
+
+/** Shared by every session in this Pi process: a limit found in one spares the others a failed request. */
+const cooldowns = new Cooldowns();
 
 export default function multiAccount(pi: ExtensionAPI) {
 	const registered = new Set<string>();
@@ -28,6 +33,7 @@ export default function multiAccount(pi: ExtensionAPI) {
 	};
 
 	sync();
+	registerAutomaticSwitching(pi, { cooldowns, accounts: () => families });
 
 	// Pi's /login and /logout write auth.json; follow along so the next free slot is always listed.
 	let watcher: FSWatcher | undefined;
@@ -65,6 +71,7 @@ export default function multiAccount(pi: ExtensionAPI) {
 			model = models.find((m) => m.id === picked);
 			if (!model) return;
 		}
+		cooldowns.clear(slot.providerId); // a manual choice overrides a recorded limit
 		if (await pi.setModel(model)) ctx.ui.notify(`Using ${providerName} · ${model.name}`, "info");
 		else ctx.ui.notify(`${providerName} is not logged in.`, "warning");
 	};
@@ -83,9 +90,12 @@ export default function multiAccount(pi: ExtensionAPI) {
 				accounts,
 				next,
 			}));
-			const isLoggedIn = (slot: Slot) => ctx.modelRegistry.getProviderAuthStatus(slot.providerId).configured;
+			const status = (slot: Slot): AccountStatus => ({
+				loggedIn: ctx.modelRegistry.getProviderAuthStatus(slot.providerId).configured,
+				limitedUntil: cooldowns.get(slot.providerId)?.until,
+			});
 			const action = await ctx.ui.custom<ViewAction | undefined>(
-				(_tui, theme, _keybindings, done) => new AccountsView(tabs, isLoggedIn, theme, ctx.model?.provider, done),
+				(_tui, theme, _keybindings, done) => new AccountsView(tabs, status, theme, ctx.model?.provider, done),
 			);
 
 			if (action?.type === "login") {
