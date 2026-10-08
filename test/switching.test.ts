@@ -94,7 +94,7 @@ test("each failure moves on, and when every account is limited the user learns w
 	assert.deepEqual(switches, ["anthropic-account-2/claude-opus-5", "anthropic-account-3/claude-opus-5"]);
 	assert.equal(last, undefined, "no continuation when nothing is usable");
 	assert.equal(notes.at(-1)!.level, "warning");
-	assert.match(notes.at(-1)!.text, /account 2 is the first to reset, in 4\dm/);
+	assert.match(notes.at(-1)!.text, /Every account is at its limit\. Account 2 resets first, in 4\dm\./);
 });
 
 test("a dead login moves on and says how to fix it", async () => {

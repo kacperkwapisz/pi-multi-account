@@ -1,10 +1,11 @@
 # pi-multi-account
 
-Multiple Claude and ChatGPT accounts per provider in [Pi](https://pi.dev).
+Use more than one Claude or ChatGPT account in [Pi](https://pi.dev), and keep working when
+one of them runs out.
 
-Every extra account is Pi's own provider under a new id (`anthropic-account-2`,
-`openai-account-2`, …). Logging in, token refresh, request handling and the model list are
-all Pi's — this extension only adds the accounts. It uses official Pi APIs only.
+Each extra account is a copy of Pi's own provider under a new id (`anthropic-account-2`,
+`openai-account-2`). Pi still does the login, token refresh and requests. This extension only
+adds the accounts and switches between them, using official Pi APIs.
 
 ## Install
 
@@ -14,62 +15,56 @@ pi install git:github.com/kacperkwapisz/pi-multi-account
 
 Requires Pi 1.x.
 
-## Use
+## Add and switch accounts
 
-```text
-/accounts
-```
+Run `/accounts`. You get a tab for Anthropic and one for OpenAI, listing your accounts and
+which one is in use. Select an account and press Enter to switch to it; your model stays the
+same if that account has it. "+ Add account" puts `/login <next free account>` in the editor,
+and Pi's normal login takes it from there. Accounts whose login stopped working are marked,
+and Enter logs them in again.
 
-Opens a view with a tab per provider (Anthropic, OpenAI):
+Plain Pi works too: `/login` always lists the next free account of each provider, and
+`/logout` removes one. ChatGPT accounts use Pi's Sign in with ChatGPT (the `openai` provider).
 
-- **Enter on an account** switches to it, keeping your model when that account offers it.
-- **Enter on "+ Add account"** puts `/login <next free account>` in the editor — press Enter
-  and Pi's own login takes over.
-- Accounts that need logging in again are marked; Enter starts the login.
+## When an account hits its limit
 
-You can also use Pi directly: `/login` lists the next free account of each provider, and
-`/logout` removes one.
-
-ChatGPT accounts use Pi's **Sign in with ChatGPT** (`openai` provider).
-
-## Automatic switching
-
-When an account hits its usage limit (or its login stops working) in the middle of a task,
-Pi moves to the next account of the same provider and carries on with the same model:
+If an account runs out in the middle of a task, Pi moves to your next account and carries on
+with the same model:
 
 ```text
 Anthropic account 1 hit its usage limit (resets in 2h 14m). Continuing on account 2.
 ```
 
-- It works like Pi's own retry: the failed attempt is hidden from the model and the next
-  request goes to the other account. Nothing is re-sent or lost.
-- Only account problems switch accounts. Overloaded servers, network errors and full context
-  windows stay with Pi's own retries and compaction.
-- An account that hit its limit is skipped until it resets (the time the provider reports,
-  otherwise 15 minutes), and `/accounts` shows when. Choosing it in `/accounts` uses it anyway.
-- When every account is at its limit, Pi stops and tells you which one resets first.
+The failed attempt is dropped and the next request goes to the other account, the same way
+Pi's own retry works, so nothing is lost or sent twice. A dead login is handled the same way.
+Overloaded servers, network errors and full context windows are left to Pi, since another
+account wouldn't help with those.
 
-## Usage limits
+An account that hit its limit is skipped until it resets. The reset time comes from the
+provider when it says, otherwise it's 15 minutes. `/accounts` shows it, and picking the
+account there uses it anyway. If every account is out, Pi stops and tells you which one
+resets first.
 
-See every account's usage with
-[pi-subscription-usage](https://github.com/kacperkwapisz/pi-subscription-usage); it picks up
-these accounts automatically, and with both installed you can switch accounts straight from
-its `/usage` view.
+## Usage
+
+[pi-subscription-usage](https://github.com/kacperkwapisz/pi-subscription-usage) shows how much
+of each account's limits you've used. It finds these accounts on its own, and when both are
+installed you can switch accounts from its `/usage` view.
 
 ## For other extensions
 
-pi-multi-account answers on Pi's `pi.events` bus, so other extensions can switch accounts
-without depending on this package:
+Other extensions can switch accounts over Pi's `pi.events` bus, without depending on this
+package:
 
 ```ts
 let accounts: { version: 1; useAccount(providerId: string, ctx: ExtensionContext): Promise<boolean> } | undefined;
 pi.events.emit("pi-multi-account:connect", { reply: (api) => (accounts = api) });
-// Set immediately when pi-multi-account is loaded, otherwise undefined.
+// Set right away when pi-multi-account is loaded, otherwise still undefined.
 await accounts?.useAccount("anthropic-account-2", ctx);
 ```
 
-`useAccount` keeps the current model when the account offers it, asks otherwise, and
-overrides a recorded usage limit (it is the user's choice).
+`useAccount` works like picking the account in `/accounts`: it keeps the current model when
+it can, asks which model to use when it can't, and ignores a recorded limit.
 
 ## Development
 

@@ -110,7 +110,7 @@ function noAccountLeft(family: FamilyAccounts | undefined, current: Slot, cooldo
 		.sort((a, b) => a.cooldown!.until - b.cooldown!.until);
 	const first = resets[0];
 	if (first) {
-		return `Every account is at its limit; account ${first.slot.number} is the first to reset, in ${formatDuration(first.cooldown!.until - Date.now())}.`;
+		return `Every account is at its limit. Account ${first.slot.number} resets first, in ${formatDuration(first.cooldown!.until - Date.now())}.`;
 	}
-	return "No other account can run this model right now; see /accounts.";
+	return "No other account can run this model right now. See /accounts.";
 }
