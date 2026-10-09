@@ -1,7 +1,7 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { FamilyAccounts } from "./accounts.ts";
-import { classifyFailure, type Cooldowns, nextAccount, parseResetAt } from "./failover.ts";
+import { classifyFailure, type Cooldowns, knownResetAt, nextAccount, parseResetAt, streamErrorResetAt } from "./failover.ts";
 import { parseSlot, type Slot } from "./families.ts";
 import { formatDuration } from "./format.ts";
 
@@ -39,6 +39,10 @@ export function registerAutomaticSwitching(
 ): void {
 	const { cooldowns } = options;
 	const failedHeaders = new Map<string, Record<string, string>>();
+	/** Reset times from streamed errors (ChatGPT's usage limit arrives that way). */
+	const streamResets = new Map<string, number>();
+	/** Each account's limit reset from its last successful response (Claude sends one each time). */
+	const knownResets = new Map<string, number>();
 	let switchesThisPrompt = 0;
 
 	pi.on("before_agent_start", () => {
@@ -52,8 +56,16 @@ export function registerAutomaticSwitching(
 			failedHeaders.set(provider, event.headers);
 		} else {
 			failedHeaders.delete(provider);
+			streamResets.delete(provider);
 			cooldowns.clear(provider);
+			const reset = knownResetAt(event.headers);
+			if (reset) knownResets.set(provider, reset);
 		}
+	});
+
+	pi.on("provider_stream_event", (event) => {
+		const reset = streamErrorResetAt(event.data);
+		if (reset) streamResets.set(event.provider, reset);
 	});
 
 	pi.on("agent_before_settle", async (event, ctx) => {
@@ -64,7 +76,14 @@ export function registerAutomaticSwitching(
 		const current = parseSlot(failed.message.provider);
 		if (!kind || !current) return;
 
-		const resetAt = parseResetAt(failed.message.errorMessage ?? "", failedHeaders.get(current.providerId));
+		// Best source first: the error itself, then a streamed error, then the last reset time the
+		// account reported while it still worked (only if that is still ahead).
+		const known = knownResets.get(current.providerId);
+		const resetAt =
+			parseResetAt(failed.message.errorMessage ?? "", failedHeaders.get(current.providerId)) ??
+			streamResets.get(current.providerId) ??
+			(known !== undefined && known > Date.now() ? known : undefined);
+		streamResets.delete(current.providerId);
 		const cooldown = cooldowns.mark(current.providerId, kind, kind === "limit" ? resetAt : undefined);
 		const family = options.accounts().find((entry) => entry.family === current.family);
 		const providerName = ctx.modelRegistry.getProviderDisplayName(current.family.id);

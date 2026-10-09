@@ -89,6 +89,35 @@ export function parseResetAt(errorMessage: string, headers?: Record<string, stri
 	return undefined;
 }
 
+/**
+ * The reset time a provider sends inside a streamed error, such as ChatGPT's usage limit over
+ * its WebSocket: `{ type: "error", error: { resets_at, resets_in_seconds }, headers }`. That
+ * error never arrives as an HTTP response, so Pi's after_provider_response doesn't see it.
+ */
+export function streamErrorResetAt(data: unknown, now = Date.now()): number | undefined {
+	const event = data as { type?: unknown; error?: { resets_at?: unknown; resets_in_seconds?: unknown }; response?: { error?: unknown } } | undefined;
+	if (event?.type !== "error" && event?.type !== "response.failed") return undefined;
+	const error = (event.error ?? event.response?.error) as { resets_at?: unknown; resets_in_seconds?: unknown } | undefined;
+	if (typeof error?.resets_at === "number" && error.resets_at > 0) return error.resets_at * 1000;
+	if (typeof error?.resets_in_seconds === "number" && error.resets_in_seconds > 0) return now + error.resets_in_seconds * 1000;
+	const headers = (event as { headers?: Record<string, string> }).headers;
+	if (headers) {
+		const lower = Object.fromEntries(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), String(value)]));
+		return parseResetAt("", lower, now);
+	}
+	return undefined;
+}
+
+/**
+ * When the account's current limit window resets, from a successful Claude response
+ * (`anthropic-ratelimit-unified-reset`). A failed Claude request carries no reset time that
+ * reaches extensions, so the last one seen is the best guess.
+ */
+export function knownResetAt(headers: Record<string, string>, now = Date.now()): number | undefined {
+	const reset = headerNumber(headers, "anthropic-ratelimit-unified-reset");
+	return reset !== undefined && reset * 1000 > now ? reset * 1000 : undefined;
+}
+
 export interface Cooldown {
 	readonly until: number;
 	readonly kind: FailureKind;

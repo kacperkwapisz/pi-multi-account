@@ -144,3 +144,58 @@ test("a successful response clears its account's recorded limit; error headers s
 	await emit("after_provider_response", { status: 200, headers: {} });
 	assert.equal(cooldowns.get("anthropic"), undefined);
 });
+
+// Recorded from real responses (October 2026).
+const CLAUDE_429 =
+	'429 {"type":"error","error":{"type":"rate_limit_error","message":"This request would exceed your account\'s rate limit. Please try again later."}}';
+const claudeOkHeaders = (resetSeconds: number) => ({
+	"anthropic-ratelimit-unified-5h-reset": String(resetSeconds),
+	"anthropic-ratelimit-unified-5h-status": "allowed",
+	"anthropic-ratelimit-unified-5h-utilization": "0.21",
+	"anthropic-ratelimit-unified-representative-claim": "five_hour",
+	"anthropic-ratelimit-unified-reset": String(resetSeconds),
+	"anthropic-ratelimit-unified-status": "allowed",
+});
+const chatGptLimitEvent = (resetsAt: number) => ({
+	type: "error",
+	error: { type: "usage_limit_reached", message: "The usage limit has been reached", plan_type: "free", resets_at: resetsAt, resets_in_seconds: 1620705 },
+	status_code: 429,
+	headers: { "X-Codex-Primary-Used-Percent": "100", "X-Codex-Primary-Reset-At": String(resetsAt) },
+});
+
+test("Claude: a limit uses the reset time from the account's last successful response", async () => {
+	const { pi, emit, notes } = fakePi();
+	const cooldowns = new Cooldowns();
+	registerAutomaticSwitching(pi, { cooldowns, accounts: () => threeAccounts });
+	const reset = Math.floor(Date.now() / 1000) + 2 * 3600;
+
+	await emit("after_provider_response", { status: 200, headers: claudeOkHeaders(reset) });
+	await emit("agent_before_settle", failedRun("anthropic", CLAUDE_429));
+	assert.equal(cooldowns.get("anthropic")!.until, reset * 1000);
+	assert.match(notes.at(-1)!.text, /hit its usage limit \(resets in (1h 59m|2h)\)\. Continuing on account 2\./);
+});
+
+test("Claude: a reset time that has already passed is not used", async () => {
+	const { pi, emit } = fakePi();
+	const cooldowns = new Cooldowns();
+	registerAutomaticSwitching(pi, { cooldowns, accounts: () => threeAccounts });
+	await emit("after_provider_response", { status: 200, headers: claudeOkHeaders(Math.floor(Date.now() / 1000) + 2) });
+	await new Promise((resolve) => setTimeout(resolve, 2_100));
+	await emit("agent_before_settle", failedRun("anthropic", CLAUDE_429));
+	const until = cooldowns.get("anthropic")!.until;
+	assert.ok(Math.abs(until - (Date.now() + 15 * 60_000)) < 5_000, "falls back to the 15-minute guess");
+});
+
+test("ChatGPT: a limit uses the reset time from the streamed error", async () => {
+	const { pi, emit } = fakePi({ models: { openai: ["gpt-5.5"], "openai-account-2": ["gpt-5.5"] } });
+	const cooldowns = new Cooldowns();
+	const accounts = listAccounts({ openai: oauth, "openai-account-2": oauth });
+	registerAutomaticSwitching(pi, { cooldowns, accounts: () => accounts });
+	const resetsAt = Math.floor(Date.now() / 1000) + 3 * 86400;
+
+	await emit("provider_stream_event", { type: "provider_stream_event", provider: "openai", data: chatGptLimitEvent(resetsAt) });
+	const run = failedRun("openai", "Codex error: The usage limit has been reached");
+	(run.context.contextEntries[2]!.messages[0] as { model: string }).model = "gpt-5.5";
+	await emit("agent_before_settle", run);
+	assert.equal(cooldowns.get("openai")!.until, resetsAt * 1000);
+});

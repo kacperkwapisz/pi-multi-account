@@ -40,8 +40,10 @@ Pi's own retry works, so nothing is lost or sent twice. A dead login is handled 
 Overloaded servers, network errors and full context windows are left to Pi, since another
 account wouldn't help with those.
 
-An account that hit its limit is skipped until it resets. The reset time comes from the
-provider when it says, otherwise it's 15 minutes. `/accounts` shows it, and picking the
+An account that hit its limit is skipped until it resets. ChatGPT says when in its limit error.
+Claude doesn't, but every successful Claude request reports when the account's current limit
+resets, so the last one seen is used. Without either (say, an account that failed on its first
+request), it's 15 minutes. `/accounts` shows it, and picking the
 account there uses it anyway. If every account is out, Pi stops and tells you which one
 resets first.
 

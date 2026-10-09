@@ -73,3 +73,19 @@ test("the next account follows the current one, wraps around, and skips unusable
 	assert.equal(nextAccount(accounts, accounts[1]!, () => false), undefined);
 	assert.equal(nextAccount([accounts[0]!], accounts[0]!, all), undefined);
 });
+
+test("reset times from streamed errors and from successful responses", async () => {
+	const { knownResetAt, streamErrorResetAt } = await import("../src/failover.ts");
+	const now = 1_790_000_000_000;
+	assert.equal(streamErrorResetAt({ type: "error", error: { resets_at: 1_790_100_000 } }, now), 1_790_100_000_000);
+	assert.equal(streamErrorResetAt({ type: "error", error: { resets_in_seconds: 60 } }, now), now + 60_000);
+	assert.equal(
+		streamErrorResetAt({ type: "error", error: {}, headers: { "X-Codex-Primary-Used-Percent": "100", "X-Codex-Primary-Reset-After-Seconds": "120" } }, now),
+		now + 120_000,
+		"headers inside the event, any case",
+	);
+	assert.equal(streamErrorResetAt({ type: "response.output_text.delta" }, now), undefined);
+	assert.equal(knownResetAt({ "anthropic-ratelimit-unified-reset": "1790003600" }, now), 1_790_003_600_000);
+	assert.equal(knownResetAt({ "anthropic-ratelimit-unified-reset": "1789999000" }, now), undefined, "already passed");
+	assert.equal(knownResetAt({}, now), undefined);
+});
